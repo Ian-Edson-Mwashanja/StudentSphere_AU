@@ -1,0 +1,10 @@
+# Netlify serves the website (the "public" folder) and forwards every /api call to your Node backend.
+# Replace the address below with the URL Render (or Railway/Fly) gives you for the backend.
+[build]
+  publish = "public"
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://YOUR-BACKEND.onrender.com/api/:splat"
+  status = 200
+  force = true

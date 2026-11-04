@@ -1,0 +1,30 @@
+# Render Blueprint for the backend (API + SQLite). The persistent disk is what keeps your database and uploaded files.
+services:
+  - type: web
+    name: studentsphere-api
+    runtime: node
+    plan: starter            # persistent disks are not available on the free plan
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: studentsphere-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - { key: NODE_VERSION, value: "20" }
+      - { key: NODE_ENV, value: production }
+      - { key: DB_FILE, value: /var/data/studentsphere.db }
+      - { key: UPLOAD_DIR, value: /var/data/uploads }
+      - { key: SEED_DEMO, value: "false" }
+      - { key: TRUST_PROXY, value: "2" }
+      - { key: JWT_SECRET, generateValue: true }
+      - { key: ADMIN_EMAIL, sync: false }
+      - { key: ADMIN_PASSWORD, sync: false }
+      - { key: APP_URL, sync: false }      # your Netlify address, e.g. https://studentspheree.netlify.app
+      - { key: SUPABASE_URL, value: "https://vzbuevjvgyocxzcnwkbs.supabase.co" }
+      - { key: SUPABASE_SERVICE_ROLE_KEY, sync: false }
+      - { key: SUPABASE_ROSTER_TABLE, value: "student_roster" }
+      - { key: SUPABASE_ROSTER_ID_COLUMNS, value: "studentid,student_id,university_id" }
+      - { key: REQUIRE_ROSTER, value: "true" }
+      - { key: AUTO_APPROVE_ROSTER, value: "false" }

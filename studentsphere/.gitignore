@@ -1,0 +1,4 @@
+node_modules
+studentsphere.db*
+uploads
+.env
