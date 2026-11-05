@@ -232,5 +232,5 @@ seed();
 })();
 routeUnassignedAchievements();
 
-module.exports = db;
+module.exports=db;
 module.exports.routeUnassignedAchievements = routeUnassignedAchievements;
