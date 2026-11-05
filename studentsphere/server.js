@@ -849,6 +849,9 @@ app.get('/api/admin/reports', auth('admin'), wrap((req, res) => {
   });
 }));
 
+// Faculties, courses, marks, GPA/CGPA and optional demo data live in academics.js
+require('./academics')(app, { db, auth, wrap, bad, audit, notify });
+
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.use('/api', (req, res) => bad(res, 'Not found', 404));
 

@@ -37,3 +37,14 @@ Admin -> **Student list** -> Upload spreadsheet (.xlsx or .csv). Supabase table:
 
 ## Files changed
 roster.js (new), db.js, server.js, public/js/{admin,auth,app}.js, package.json, netlify.toml, render.yaml, .env.example.
+
+## Demo data (for presentations)
+Set `DEMO_PASSWORD` on Render (or in `.env` locally). On a database that has **no students or lecturers yet**, the app loads sample faculties,
+departments, courses, students, lecturers, achievements, recommendations and approved results, plus one batch of marks waiting for Registrar approval.
+Every demo account uses `DEMO_PASSWORD` as its password (log in as `mdube@africau.edu`, `jncube@africau.edu` or `ian@student.africau.edu`).
+It never runs when real students or lecturers exist, and it never deletes anything. Remove `DEMO_PASSWORD` before real use.
+
+## Results, GPA and CGPA
+Lecturers enter coursework + exam marks per course and semester (e.g. `2026-S1`), save drafts, then submit. The Registrar (admin) approves or returns each batch
+under **Results & GPA**. GPA = sum(grade points x credit hours) / sum(credit hours). CGPA uses the latest attempt of every course. Only approved marks count.
+The grading scale is a SAMPLE: edit it under Results & GPA to match the official Africa University scale.

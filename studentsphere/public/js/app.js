@@ -5,14 +5,16 @@ import { loginPage, signupPage } from './auth.js';
 import { studentPages } from './student.js';
 import { lecturerPages } from './lecturer.js';
 import { adminPages } from './admin.js';
+import { adminExtra, lecturerExtra, studentExtra } from './academics.js';
+Object.assign(adminPages, adminExtra); Object.assign(lecturerPages, lecturerExtra); Object.assign(studentPages, studentExtra);
 
 const NAV = {
-  student: [['dashboard', 'Dashboard', '🏠'], ['profile', 'My profile', '👤'], ['performance', 'Academic performance', '📊'], ['achievements', 'Achievements', '🏅'],
+  student: [['dashboard', 'Dashboard', '🏠'], ['profile', 'My profile', '👤'], ['performance', 'Academic performance', '📊'], ['results', 'My results', '🎓'], ['achievements', 'Achievements', '🏅'],
     ['projects', 'Projects', '💻'], ['recommendations', 'Recommendations', '📄'], ['notifications', 'Notifications', '🔔'], ['edit-profile', 'Edit profile', '✏️'], ['settings', 'Settings', '⚙️']],
   lecturer: [['dashboard', 'Dashboard', '🏠'], ['profile', 'My profile', '👤'], ['students', 'Student profiles', '👥'], ['requests', 'Recommendation requests', '📄'],
-    ['achievements', 'Achievement verification', '🏅'], ['completed', 'Completed recommendations', '✅'], ['notifications', 'Notifications', '🔔'], ['settings', 'Settings', '⚙️']],
+    ['achievements', 'Achievement verification', '🏅'], ['completed', 'Completed recommendations', '✅'], ['marks', 'Course marks', '📝'], ['notifications', 'Notifications', '🔔'], ['settings', 'Settings', '⚙️']],
   admin: [['dashboard', 'Dashboard', '📊'], ['users', 'User management', '👥'], ['approvals', 'Account approvals', '✅'], ['students', 'Students', '🎓'],
-    ['lecturers', 'Lecturers', '📚'], ['assignments', 'Lecturer assignments', '🔗'], ['roster', 'Student list', '📋'], ['records', 'Academic records', '🗂'], ['recommendations', 'Recommendations', '📄'],
+    ['lecturers', 'Lecturers', '📚'], ['assignments', 'Lecturer assignments', '🔗'], ['roster', 'Student list', '📋'], ['records', 'Academic records', '🗂'], ['faculties', 'Faculties & departments', '🏛'], ['courses', 'Courses', '📘'], ['results', 'Results & GPA', '🧮'], ['recommendations', 'Recommendations', '📄'],
     ['achievements', 'Achievement verification', '🏅'], ['reports', 'Reports', '📈'], ['emails', 'Email log', '✉️'], ['audit', 'Audit trail', '🧾'],
     ['notifications', 'Notifications', '🔔'], ['settings', 'Settings', '⚙️']]
 };

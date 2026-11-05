@@ -176,3 +176,7 @@ footer{background:var(--ink);color:#fff;padding:34px 0 26px}
   .print-area{position:absolute;left:0;top:0;width:100%}
   .no-print{display:none!important}
 }
+
+/* results & marks entry */
+.mi{width:84px;padding:6px 8px}
+.tools select,.tools input{min-width:0}
