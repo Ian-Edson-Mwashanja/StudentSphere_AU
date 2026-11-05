@@ -232,5 +232,37 @@ seed();
 })();
 routeUnassignedAchievements();
 
+// ---------------------------------------------------------------- administrator bootstrap (runs on EVERY start)
+// 1) look for the admin by ADMIN_EMAIL  2) missing -> create from ADMIN_EMAIL / ADMIN_PASSWORD
+// 3) exists -> leave account and password unchanged  4) never deletes or edits any other row
+function ensureAdmin() {
+  const email = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password) {
+    if (!db.prepare("SELECT 1 FROM users WHERE role='admin' LIMIT 1").get())
+      console.warn('No administrator exists and ADMIN_EMAIL / ADMIN_PASSWORD are not set, so none was created.');
+    return;
+  }
+  const existing = db.prepare('SELECT id, role, status FROM users WHERE lower(email)=?').get(email);
+  if (existing) {
+    if (existing.role !== 'admin') console.warn(`ADMIN_EMAIL (${email}) already belongs to a ${existing.role} account. Nothing was changed. Use a different ADMIN_EMAIL.`);
+    else if (existing.status !== 'active') console.warn(`Administrator ${email} exists but its status is "${existing.status}". Left unchanged.`);
+    else console.log('Administrator already exists: account and password left unchanged.');
+    return;
+  }
+  const adminId = String(process.env.ADMIN_ID || 'AU-ADMIN-001').trim();
+  if (db.prepare('SELECT 1 FROM users WHERE university_id=?').get(adminId)) {
+    console.warn(`Cannot create the administrator: ID "${adminId}" is already used by another account. Set ADMIN_ID to a different value.`);
+    return;
+  }
+  db.transaction(() => {
+    const id = db.prepare(`INSERT INTO users (role, full_name, university_id, email, password_hash, status) VALUES ('admin',?,?,?,?, 'active')`)
+      .run(process.env.ADMIN_NAME || 'System Administrator', adminId, email, bcrypt.hashSync(password, 10)).lastInsertRowid;
+    db.prepare('INSERT OR IGNORE INTO profiles (user_id) VALUES (?)').run(id);
+    db.prepare('INSERT OR IGNORE INTO settings (user_id) VALUES (?)').run(id);
+  })();
+  console.log(`Created the administrator account (${email}) from environment variables.`);
+}
+ensureAdmin();
 module.exports=db;
 module.exports.routeUnassignedAchievements = routeUnassignedAchievements;
