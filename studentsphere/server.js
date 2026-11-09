@@ -315,6 +315,81 @@ app.post('/api/auth/login', wrap((req, res) => {
   res.json({ token: jwt.sign({ id: u.id }, SECRET, { expiresIn: '12h' }), user: pub(u) });
 }));
 
+// Password recovery: one-time, hashed tokens that expire after 30 minutes.
+const forgotLimits = new Map();
+function forgotRateLimited(key) {
+  const now = Date.now();
+  const current = forgotLimits.get(key);
+  if (!current || now - current.startedAt >= 15 * 60e3) {
+    forgotLimits.set(key, { count: 1, startedAt: now });
+    return false;
+  }
+  current.count += 1;
+  return current.count > 5;
+}
+
+app.post('/api/auth/forgot-password', wrap(async (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  const ip = req.ip || 'unknown';
+  if (forgotRateLimited(ip)) return bad(res, 'Too many password reset requests. Please try again in 15 minutes.', 429);
+
+  // Always use the same public response so callers cannot discover registered accounts.
+  const genericMessage = 'If an account exists for that email address, a password reset link has been sent.';
+  if (!/^\S+@\S+\.\S+$/.test(email) || email.length > 254) return res.json({ ok: true, message: genericMessage });
+
+  const user = db.prepare('SELECT id, full_name, email FROM users WHERE lower(email)=?').get(email);
+  if (!user) return res.json({ ok: true, message: genericMessage });
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60e3).toISOString();
+  db.prepare('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE user_id=? AND used_at IS NULL').run(user.id);
+  db.prepare('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?,?,?)').run(user.id, tokenHash, expiresAt);
+
+  await sendMail({
+    user, force: true, template: 'password_reset', subject: 'Reset your StudentSphere password',
+    related: { type: 'password_reset', id: user.id },
+    heading: 'Reset your password',
+    intro: 'We received a request to reset the password for your StudentSphere account.',
+    paragraphs: ['This link can be used once and expires in 30 minutes. If you did not request a password reset, you can safely ignore this email.'],
+    action: { label: 'Reset password', path: `/reset-password/${rawToken}` }
+  });
+
+  const response = { ok: true, message: genericMessage };
+  // In local development, expose a test link because dev mail mode only writes to the Email log.
+  // This is never returned when NODE_ENV is production.
+  if (process.env.NODE_ENV !== 'production' && mailMode() !== 'smtp') {
+    response.resetUrl = `${appUrl()}/#/reset-password/${rawToken}`;
+  }
+  res.json(response);
+}));
+
+app.post('/api/auth/reset-password', wrap((req, res) => {
+  const b = req.body || {};
+  const token = String(b.token || '').trim();
+  const password = String(b.password || '');
+  if (!/^[a-f0-9]{64}$/i.test(token)) return bad(res, 'This password reset link is invalid or has expired.', 400);
+  if (password.length < 8 || !/\d/.test(password)) return bad(res, 'Password needs at least 8 characters and a number.');
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const record = db.prepare(`SELECT pr.id, pr.user_id, pr.expires_at, u.role
+    FROM password_reset_tokens pr JOIN users u ON u.id=pr.user_id
+    WHERE pr.token_hash=? AND pr.used_at IS NULL`).get(tokenHash);
+  if (!record || new Date(record.expires_at).getTime() <= Date.now()) {
+    return bad(res, 'This password reset link is invalid or has expired. Please request a new one.', 400);
+  }
+
+  const now = new Date().toISOString();
+  const update = db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(bcrypt.hashSync(password, 10), record.user_id);
+    // Consume this token and invalidate any other outstanding reset links for the account.
+    db.prepare('UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL').run(now, record.user_id);
+  });
+  update();
+  audit({ id: record.user_id, role: record.role }, 'account.password_reset', { type: 'user', id: record.user_id });
+  res.json({ ok: true, message: 'Your password has been reset. You can now sign in with your new password.' });
+}));
+
 app.get('/api/me', auth(), wrap((req, res) => res.json({ user: pub(req.user) })));
 
 app.put('/api/me/password', auth(), wrap((req, res) => {

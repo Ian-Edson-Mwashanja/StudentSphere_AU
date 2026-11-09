@@ -1,5 +1,5 @@
 import { api, store } from './api.js';
-import { esc, $, $$, bindPw, field, select, pwField, formData, toast } from './ui.js';
+import { esc, $, $$, bindPw, field, select, pwField, formData } from './ui.js';
 
 const heroBand = `<section style="background:#0a0a0a;color:#fff;margin-top:40px;padding:50px 20px"><div class="wrap">
   <div class="eyebrow" style="color:#ff8a9b">LEARN · BUILD · GROW</div>
@@ -28,7 +28,7 @@ export function loginPage(main) {
   $$('#roles button', main).forEach((b) => b.addEventListener('click', () => {
     role = b.dataset.r; $$('#roles button', main).forEach((x) => x.classList.toggle('on', x === b));
   }));
-  $('#forgot', main).addEventListener('click', (e) => { e.preventDefault(); toast('Password reset is not set up yet. Ask an administrator.'); });
+  $('#forgot', main).addEventListener('click', (e) => { e.preventDefault(); location.hash = '#/forgot-password'; });
   $('#f', main).addEventListener('submit', async (e) => {
     e.preventDefault();
     const d = formData(e.target); const btn = $('#go', main);
@@ -40,6 +40,70 @@ export function loginPage(main) {
       const next = sessionStorage.getItem('ss_next'); sessionStorage.removeItem('ss_next');
       setTimeout(() => { location.hash = next && next.startsWith(`#/${r.user.role}/`) ? next : `#/${r.user.role}/dashboard`; }, 400);
     } catch (err) { $('#msg', main).innerHTML = `<div class="msg err">${esc(err.message)}</div>`; btn.disabled = false; }
+  });
+}
+
+export function forgotPasswordPage(main) {
+  main.innerHTML = `<div class="wrap"><div class="auth-wrap"><div class="auth-card">
+    <div class="eyebrow">Account recovery</div><h1>Forgot your password?</h1>
+    <p class="sub" style="margin-bottom:18px">Enter the university email address linked to your StudentSphere account. We will send you a secure reset link.</p>
+    <div id="msg"></div>
+    <form id="forgot-form">${field('University email', 'email', { req: true, type: 'email', ph: 'name@africau.edu' })}
+      <button class="btn red block" id="forgot-submit">Send reset link →</button></form>
+    <p class="center" style="margin-top:18px;font-size:14px;color:#6b6b6b"><a href="#/login">← Back to login</a></p>
+  </div><p class="auth-foot">StudentSphere · Your Academic Journey. Connected.</p></div></div>`;
+
+  $('#forgot-form', main).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('#forgot-submit', main);
+    const email = formData(e.target).email;
+    btn.disabled = true; btn.textContent = 'Sending…'; $('#msg', main).innerHTML = '';
+    try {
+      const result = await api('/auth/forgot-password', { method: 'POST', body: { email } });
+      const devLink = result.resetUrl
+        ? `<p style="margin-top:12px"><strong>Local development link:</strong><br><a href="${esc(result.resetUrl)}">Open password reset page</a></p>`
+        : '';
+      $('#msg', main).innerHTML = `<div class="msg ok">${esc(result.message)}${devLink}</div>`;
+      e.target.reset();
+    } catch (err) {
+      $('#msg', main).innerHTML = `<div class="msg err">${esc(err.message)}</div>`;
+    } finally { btn.disabled = false; btn.textContent = 'Send reset link →'; }
+  });
+}
+
+export function resetPasswordPage(main, token) {
+  main.innerHTML = `<div class="wrap"><div class="auth-wrap"><div class="auth-card">
+    <div class="eyebrow">Secure account recovery</div><h1>Set a new password</h1>
+    <p class="sub" style="margin-bottom:18px">Choose a new password with at least 8 characters and one number.</p>
+    <div id="msg"></div>
+    <form id="reset-form">${pwField('New password', 'password', 'Enter a new password')}
+      ${pwField('Confirm new password', 'confirm', 'Repeat your new password')}
+      <button class="btn red block" id="reset-submit">Update password →</button></form>
+    <p class="center" style="margin-top:18px;font-size:14px;color:#6b6b6b"><a href="#/login">Back to login</a></p>
+  </div><p class="auth-foot">StudentSphere · Your Academic Journey. Connected.</p></div></div>`;
+  bindPw(main);
+
+  $('#reset-form', main).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = formData(e.target); const btn = $('#reset-submit', main);
+    if (d.password !== d.confirm) {
+      $('#msg', main).innerHTML = '<div class="msg err">The passwords do not match.</div>';
+      return;
+    }
+    if (!token || !/^[a-f0-9]{64}$/i.test(token)) {
+      $('#msg', main).innerHTML = '<div class="msg err">This password reset link is invalid. Request a new link.</div>';
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Updating…'; $('#msg', main).innerHTML = '';
+    try {
+      const result = await api('/auth/reset-password', { method: 'POST', body: { token, password: d.password } });
+      $('#msg', main).innerHTML = `<div class="msg ok">${esc(result.message)} <a href="#/login">Log in now</a>.</div>`;
+      e.target.reset();
+      e.target.hidden = true;
+    } catch (err) {
+      $('#msg', main).innerHTML = `<div class="msg err">${esc(err.message)}</div>`;
+      btn.disabled = false; btn.textContent = 'Update password →';
+    }
   });
 }
 

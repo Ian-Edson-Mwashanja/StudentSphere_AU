@@ -1,7 +1,7 @@
 // StudentSphere front end: shell (header, drawer, footer) + hash router
 import { api, store } from './api.js';
 import { esc, $, $$, initials } from './ui.js';
-import { loginPage, signupPage } from './auth.js';
+import { loginPage, signupPage, forgotPasswordPage, resetPasswordPage } from './auth.js';
 import { studentPages } from './student.js';
 import { lecturerPages } from './lecturer.js';
 import { adminPages } from './admin.js';
@@ -80,6 +80,13 @@ async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const user = await currentUser();
   window.scrollTo(0, 0);
+
+  // Password recovery pages
+  if (parts[0] === 'forgot-password' || parts[0] === 'reset-password') {
+    const main = publicShell();
+    if (parts[0] === 'forgot-password') return forgotPasswordPage(main);
+    return resetPasswordPage(main, parts[1] || '');
+  }
 
   if (!user) {
     if (parts[0] && !['login', 'signup'].includes(parts[0])) sessionStorage.setItem('ss_next', location.hash);

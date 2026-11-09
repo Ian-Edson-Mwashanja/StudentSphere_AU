@@ -3,7 +3,9 @@
   "version": "2.0.0",
   "description": "StudentSphere - Africa University student, lecturer and admin portal (prototype)",
   "main": "server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
@@ -15,5 +17,8 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.9.14"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
   }
 }

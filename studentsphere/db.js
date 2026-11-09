@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `);
 
-// ---------------------------------------------------------------- recommendations (request + letter in one table)
+// recommendations (request + letter in one table)
 const RECS_DDL = (name) => `CREATE TABLE ${name} (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -82,10 +82,9 @@ if (!recSql) {
   console.log('Migrated recommendations table to the new status list.');
 }
 
-// ---------------------------------------------------------------- additive migrations on existing tables
+//additive migrations on existing tables
 const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
 const addCol = (t, c, def) => { if (!cols(t).includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${def}`); };
-
 addCol('achievements', 'organisation', 'TEXT');
 addCol('achievements', 'date_obtained', 'TEXT');
 addCol('achievements', 'evidence_note', 'TEXT');
@@ -102,7 +101,7 @@ db.exec("UPDATE achievements SET status = 'pending_verification' WHERE status IS
 addCol('notifications', 'link', 'TEXT');
 addCol('notifications', 'type', 'TEXT');
 
-// ---------------------------------------------------------------- new tables
+//new tables
 db.exec(`
 CREATE TABLE IF NOT EXISTS lecturer_assignments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,16 +143,23 @@ CREATE TABLE IF NOT EXISTS email_log (
   status TEXT, error TEXT, body_html TEXT, related_type TEXT, related_id INTEGER,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id, used_at);
 `);
-
 // Existing achievements that have no lecturer yet go to the student's primary assigned lecturer (if any).
 function routeUnassignedAchievements() {
   db.exec(`UPDATE achievements SET lecturer_id = (
       SELECT lecturer_id FROM lecturer_assignments WHERE student_id = achievements.user_id ORDER BY is_primary DESC, id LIMIT 1)
     WHERE lecturer_id IS NULL AND status IN ('pending_verification','under_review')`);
 }
-
-// ---------------------------------------------------------------- demo data (fresh database only)
+// demo data (fresh database only)
 // Production: SEED_DEMO=false creates ONE admin from ADMIN_EMAIL / ADMIN_PASSWORD (no demo accounts, no demo passwords).
 function seedAdminFromEnv() {
   const { ADMIN_EMAIL, ADMIN_PASSWORD } = process.env;
@@ -222,7 +228,6 @@ function seed() {
   console.log('Seeded demo data.');
 }
 seed();
-
 // Upgrade path: an older database with the demo accounts but no assignments yet.
 (function demoAssignmentsForUpgrades() {
   if (db.prepare('SELECT COUNT(*) c FROM lecturer_assignments').get().c > 0) return;
@@ -231,38 +236,5 @@ seed();
   if (s && l) db.prepare('INSERT OR IGNORE INTO lecturer_assignments (student_id, lecturer_id, is_primary) VALUES (?,?,1)').run(s.id, l.id);
 })();
 routeUnassignedAchievements();
-
-// ---------------------------------------------------------------- administrator bootstrap (runs on EVERY start)
-// 1) look for the admin by ADMIN_EMAIL  2) missing -> create from ADMIN_EMAIL / ADMIN_PASSWORD
-// 3) exists -> leave account and password unchanged  4) never deletes or edits any other row
-function ensureAdmin() {
-  const email = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-  const password = process.env.ADMIN_PASSWORD;
-  if (!email || !password) {
-    if (!db.prepare("SELECT 1 FROM users WHERE role='admin' LIMIT 1").get())
-      console.warn('No administrator exists and ADMIN_EMAIL / ADMIN_PASSWORD are not set, so none was created.');
-    return;
-  }
-  const existing = db.prepare('SELECT id, role, status FROM users WHERE lower(email)=?').get(email);
-  if (existing) {
-    if (existing.role !== 'admin') console.warn(`ADMIN_EMAIL (${email}) already belongs to a ${existing.role} account. Nothing was changed. Use a different ADMIN_EMAIL.`);
-    else if (existing.status !== 'active') console.warn(`Administrator ${email} exists but its status is "${existing.status}". Left unchanged.`);
-    else console.log('Administrator already exists: account and password left unchanged.');
-    return;
-  }
-  const adminId = String(process.env.ADMIN_ID || 'AU-ADMIN-001').trim();
-  if (db.prepare('SELECT 1 FROM users WHERE university_id=?').get(adminId)) {
-    console.warn(`Cannot create the administrator: ID "${adminId}" is already used by another account. Set ADMIN_ID to a different value.`);
-    return;
-  }
-  db.transaction(() => {
-    const id = db.prepare(`INSERT INTO users (role, full_name, university_id, email, password_hash, status) VALUES ('admin',?,?,?,?, 'active')`)
-      .run(process.env.ADMIN_NAME || 'System Administrator', adminId, email, bcrypt.hashSync(password, 10)).lastInsertRowid;
-    db.prepare('INSERT OR IGNORE INTO profiles (user_id) VALUES (?)').run(id);
-    db.prepare('INSERT OR IGNORE INTO settings (user_id) VALUES (?)').run(id);
-  })();
-  console.log(`Created the administrator account (${email}) from environment variables.`);
-}
-ensureAdmin();
 module.exports=db;
 module.exports.routeUnassignedAchievements = routeUnassignedAchievements;
