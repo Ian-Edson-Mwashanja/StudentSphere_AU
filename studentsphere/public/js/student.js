@@ -5,6 +5,21 @@ import { notificationsPage, settingsPage } from './shared.js';
 const stat = (label, n, note = '', red = false) => `<div class="card stat"><small>${label}</small><div class="n ${red ? 'red' : ''}">${n ?? '—'}</div><span>${note}</span></div>`;
 const head = (eyebrow, title, sub = '') => `<div class="eyebrow">${eyebrow}</div><h1 class="page-title">${title}</h1>${sub ? `<p class="sub">${sub}</p>` : ''}`;
 
+const asArray = (value) => {
+  if (Array.isArray(value)) return value;
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
 async function dashboard(main, { user }) {
   const d = await api('/dashboard');
   const first = user.full_name.split(' ')[0];
@@ -23,7 +38,10 @@ async function dashboard(main, { user }) {
 
 async function profile(main, { user }) {
   const p = await api('/me/profile');
-  const pr = p.profile, u = p.user;
+  const pr = p.profile || {}, u = p.user || {};
+  const skills = asArray(pr.skills);
+  const achievements = asArray(p.achievements);
+  const projects = asArray(p.projects);
   const sec = (id, num, label, title, body) => `<section class="psec" id="sec-${id}"><div class="eyebrow">${num} / ${label}</div><h2>${title}</h2>${body}</section>`;
   main.innerHTML = `<div class="wrap print-area">
     <div class="prof-hero"><div class="big-av">${esc(initials(u.full_name))}</div>
@@ -32,11 +50,11 @@ async function profile(main, { user }) {
       <div class="hero-actions no-print" style="margin-top:16px"><a class="btn white sm" href="#/student/edit-profile">✏ Edit profile</a><button class="btn dark sm" id="cv" style="border-color:#444">⬇ Download CV</button><a class="btn ghost-w sm" href="#/student/recommendations">Recommendation</a></div></div></div>
     <div class="tabs no-print">${[['about', 'About Me'], ['skills', 'Skills'], ['education', 'Education'], ['ach', 'Achievements'], ['projects', 'Projects'], ['contact', 'Contact']].map(([k, l]) => `<button data-s="${k}">${l}</button>`).join('')}</div>
     ${sec('about', '01', 'About me', 'Curious by nature.<br>Driven by possibility.', `<p style="max-width:680px;color:#444">${esc(pr.about || 'Tell people about yourself in Edit profile.')}</p>`)}
-    ${sec('skills', '02', 'Skills', 'What I work with', `<div class="chips">${pr.skills.length ? pr.skills.map((s) => `<span class="chip">${esc(s)}</span>`).join('') : emptyBox('No skills added yet.')}</div>`)}
+    ${sec('skills', '02', 'Skills', 'What I work with', `<div class="chips">${skills.length ? skills.map((s) => `<span class="chip">${esc(s)}</span>`).join('') : emptyBox('No skills added yet.')}</div>`)}
     ${sec('education', '03', 'Education', 'Education & experience', `<div class="grid g2"><div class="card accent"><small style="color:#6b6b6b">PROGRAMME</small><h3 style="margin:6px 0">${esc(u.programme || '—')}</h3><p>${esc(u.faculty || '')}</p><p>${esc(u.year_of_study || '')} · CGPA <b>${p.cgpa ?? '—'}</b></p></div>
       <div class="card"><small style="color:#6b6b6b">EXPERIENCE</small><p style="margin-top:8px">${esc(pr.experience || 'No experience added yet.')}</p></div></div>`)}
-    ${sec('ach', '04', 'Achievements', 'Recognition', p.achievements.length ? p.achievements.map((a) => `<div class="card" style="margin-bottom:12px"><div class="eyebrow">${esc(a.category || 'Achievement')}</div><h3>${esc(a.title)} ${verifiedBadge(a)}</h3><p style="color:#6b6b6b">${esc(a.description || '')}</p>${a.status !== 'verified' ? `<p class="no-print" style="margin-top:6px">${statusTag(a.status)}</p>` : ''}</div>`).join('') : emptyBox('No achievements yet.'))}
-    ${sec('projects', '05', 'Selected work', 'Featured projects', p.projects.length ? p.projects.map((x, i) => `<div class="proj"><div class="pv">PROJECT PREVIEW<br>0${i + 1}</div><div class="pb"><div class="eyebrow">Academic project</div><h3>${esc(x.title)}</h3><p style="color:#555">${esc(x.description || '')}</p>
+    ${sec('ach', '04', 'Achievements', 'Recognition', achievements.length ? achievements.map((a) => `<div class="card" style="margin-bottom:12px"><div class="eyebrow">${esc(a.category || 'Achievement')}</div><h3>${esc(a.title)} ${verifiedBadge(a)}</h3><p style="color:#6b6b6b">${esc(a.description || '')}</p>${a.status !== 'verified' ? `<p class="no-print" style="margin-top:6px">${statusTag(a.status)}</p>` : ''}</div>`).join('') : emptyBox('No achievements yet.'))}
+    ${sec('projects', '05', 'Selected work', 'Featured projects', projects.length ? projects.map((x, i) => `<div class="proj"><div class="pv">PROJECT PREVIEW<br>0${i + 1}</div><div class="pb"><div class="eyebrow">Academic project</div><h3>${esc(x.title)}</h3><p style="color:#555">${esc(x.description || '')}</p>
       <div class="chips" style="margin:10px 0">${String(x.tech || '').split(',').filter((t) => t.trim()).map((t) => `<span class="chip" style="font-size:12px">${esc(t.trim())}</span>`).join('')}</div>${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">View project →</a>` : ''}</div></div>`).join('') : emptyBox('No projects yet.'))}
     ${sec('contact', '06', 'Get in touch', 'Let’s build something meaningful.', `<p style="color:#555;margin-bottom:12px">I’m open to student collaborations, practical learning opportunities, and conversations.</p>
       <p>📧 ${esc(u.email)}${pr.phone ? ` · 📞 ${esc(pr.phone)}` : ''}${pr.location ? ` · 📍 ${esc(pr.location)}` : ''}</p>
@@ -48,20 +66,22 @@ async function profile(main, { user }) {
 
 async function performance(main) {
   const p = await api('/me/profile');
+  const results = asArray(p.results);
   main.innerHTML = `<div class="wrap">${head('Academic', 'Academic performance', 'Your GPA by year of study. Results are imported by the administration.')}
-    <div class="grid g3" style="margin-bottom:16px">${stat('Cumulative GPA', p.cgpa, 'Completed years', true)}${stat('Years recorded', p.results.length)}</div>
+    <div class="grid g3" style="margin-bottom:16px">${stat('Cumulative GPA', p.cgpa, 'Completed years', true)}${stat('Years recorded', results.length)}</div>
     <div class="table-wrap"><table><thead><tr><th>Year</th><th>Academic year</th><th>GPA</th><th>Standing</th></tr></thead><tbody>
-    ${p.results.map((r) => `<tr><td><b>${esc(r.year_label)}</b></td><td>${esc(r.academic_year)}</td><td><b>${r.gpa?.toFixed ? r.gpa.toFixed(2) : '—'}</b></td><td><span class="tag">${esc(r.standing || '')}</span></td></tr>`).join('') || `<tr><td colspan="4">${emptyBox('No results recorded yet.')}</td></tr>`}</tbody></table></div></div>`;
+    ${results.map((r) => `<tr><td><b>${esc(r.year_label)}</b></td><td>${esc(r.academic_year)}</td><td><b>${r.gpa?.toFixed ? r.gpa.toFixed(2) : '—'}</b></td><td><span class="tag">${esc(r.standing || '')}</span></td></tr>`).join('') || `<tr><td colspan="4">${emptyBox('No results recorded yet.')}</td></tr>`}</tbody></table></div></div>`;
 }
 
 
 async function achievements(main) {
   const draw = async (banner = '') => {
     const [p, opts, lecs] = await Promise.all([api('/me/profile'), api('/achievement-options'), api('/lecturers')]);
+    const achievements = asArray(p.achievements);
     main.innerHTML = `<div class="wrap">${head('Portfolio', 'Achievements', 'Awards, leadership roles and milestones. Every achievement is checked by a lecturer before it can show a Verified badge.')}
       ${banner ? `<div class="msg ok">${esc(banner)}</div>` : ''}
       <button class="btn red" id="add" style="margin-bottom:16px">＋ Add achievement</button>
-      ${p.achievements.length ? p.achievements.map((a) => `<div class="card" style="margin-bottom:12px">
+      ${achievements.length ? achievements.map((a) => `<div class="card" style="margin-bottom:12px">
         <div class="list-row" style="border:0;padding:0;align-items:flex-start"><div class="grow">
           <div class="eyebrow">${esc(a.category || 'Achievement')}${a.date_obtained ? ' · ' + fmtDate(a.date_obtained) : a.year ? ' · ' + esc(a.year) : ''}</div>
           <h3 style="font-size:22px">${esc(a.title)} ${verifiedBadge(a)}</h3>
@@ -117,9 +137,10 @@ async function achievements(main) {
 async function projects(main) {
   const draw = async () => {
     const p = await api('/me/profile');
+    const projects = asArray(p.projects);
     main.innerHTML = `<div class="wrap">${head('Portfolio', 'Projects', 'Show what you have built.')}
       <button class="btn red" id="add" style="margin-bottom:16px">＋ Add project</button>
-      ${p.projects.length ? p.projects.map((x, i) => `<div class="proj"><div class="pv">PROJECT PREVIEW<br>0${i + 1}</div><div class="pb"><h3>${esc(x.title)}</h3><p style="color:#555">${esc(x.description || '')}</p><p class="small" style="margin:8px 0">${esc(x.tech || '')}</p>
+      ${projects.length ? projects.map((x, i) => `<div class="proj"><div class="pv">PROJECT PREVIEW<br>0${i + 1}</div><div class="pb"><h3>${esc(x.title)}</h3><p style="color:#555">${esc(x.description || '')}</p><p class="small" style="margin:8px 0">${esc(x.tech || '')}</p>
         ${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">View project →</a> ` : ''}<button class="btn sm" data-del="${x.id}" style="margin-left:8px">Delete</button></div></div>`).join('') : `<div class="card">${emptyBox('No projects yet.')}</div>`}</div>`;
     $('#add', main).addEventListener('click', () => {
       const m = modal(`<h2>Add project</h2><form>${field('Title', 'title', { req: true })}${area('Description', 'description')}${field('Technologies', 'tech', { ph: 'HTML5, CSS3, JavaScript' })}${field('Link (optional)', 'url', { ph: 'https://…' })}
@@ -165,11 +186,12 @@ async function recommendations(main, { user }) {
 }
 
 async function editProfile(main) {
-  const p = await api('/me/profile'); const u = p.user, pr = p.profile;
+  const p = await api('/me/profile'); const u = p.user || {}, pr = p.profile || {};
+  const skills = asArray(pr.skills);
   main.innerHTML = `<div class="wrap"><a href="#/student/profile">← Back to profile</a><div class="eyebrow" style="margin-top:14px">Profile settings</div><h1 class="page-title">Edit your profile</h1>
     <p class="sub">Keep your academic and professional information up to date.</p><div class="card"><form id="ef">
     <div class="row2">${field('Full name', 'full_name', { value: u.full_name, req: true })}${field('Headline', 'headline', { value: pr.headline, ph: 'e.g. Software Engineering student' })}</div>
-    ${area('About me', 'about', { value: pr.about })}${field('Skills (comma separated)', 'skills', { value: pr.skills.join(', '), ph: 'HTML, CSS, JavaScript' })}
+    ${area('About me', 'about', { value: pr.about })}${field('Skills (comma separated)', 'skills', { value: skills.join(', '), ph: 'HTML, CSS, JavaScript' })}
     <div class="row2">${field('Faculty', 'faculty', { value: u.faculty })}${field('Programme', 'programme', { value: u.programme })}</div>
     <div class="row2">${select('Year of study', 'year_of_study', ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Postgraduate'], { value: u.year_of_study })}${field('Phone', 'phone', { value: pr.phone })}</div>
     <div class="row2">${field('Location', 'location', { value: pr.location })}${field('GitHub link', 'github', { value: pr.github, ph: 'https://github.com/…' })}</div>
