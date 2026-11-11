@@ -1,0 +1,8 @@
+# Local editor settings
+.vscode/
+
+# Previous project backups
+StudentSphere_Pre_Postgres_Server_Backup/
+
+# Root-level duplicate SSL certificate
+/prod-ca-2021.crt

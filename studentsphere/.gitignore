@@ -2,3 +2,18 @@ node_modules
 studentsphere.db*
 uploads
 .env
+
+# PostgreSQL migration backups
+*.bak
+*.backup.js
+*.before-*.js
+*.verified-backup.js
+
+# Temporary database inspection scripts
+check-*.js
+inspect-*.js
+verify-db.js
+
+# Local migration inspection files
+inspect-id-generation.sql
+server.postgres.js

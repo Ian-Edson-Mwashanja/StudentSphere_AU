@@ -6,7 +6,11 @@ if (!process.env.DATABASE_URL) {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false
+    ca: require("fs").readFileSync(
+      require("path").join(__dirname, "prod-ca-2021.crt"),
+      "utf8"
+    ),
+    rejectUnauthorized: true
   },
   options: "-c search_path=studentsphere,public",
   max: 5,
