@@ -1,50 +1,123 @@
-# Deploying StudentSphere (Netlify + backend) and the student list
+﻿# StudentSphere Deployment Guide
 
-## Why not Netlify alone?
-Netlify hosts static files and short-lived serverless functions. StudentSphere is a long-running Express server that
-keeps an SQLite file (`studentsphere.db`) and uploaded evidence in `uploads/`. On Netlify those would be wiped
-on every deploy/cold start. So: **backend on a host with a persistent disk, website on Netlify** (Netlify forwards /api to the backend).
-(Prefer one service? Deploy just the backend on Render - it also serves the website. Skip steps 3-4.)
+## Deployment Architecture
 
-## 1. Push to GitHub
-`.gitignore` already excludes `.env`, the database and `uploads`.
+StudentSphere uses:
+- Render to host the Express application and frontend.
+- Supabase PostgreSQL to store application data.
+- Render Persistent Disk to store uploaded achievement evidence.
+- SMTP to send password reset and notification emails.
 
-## 2. Backend on Render (Blueprint)
-1. render.com -> New -> Blueprint -> pick the repo (it reads `render.yaml`). Check current pricing: the disk needs a paid instance.
-2. When asked, set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `APP_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Get the service-role key from Supabase Dashboard -> Project Settings -> API Keys. Keep it secret and only add it to Render environment variables.
-3. Open `https://<name>.onrender.com/api/health` - you should see `{"ok":true}`.
-First start creates only your admin account (no demo users). Add SMTP_* variables later for real emails.
-Railway or Fly.io work the same way: any host with a persistent volume. Point `DB_FILE` and `UPLOAD_DIR` at the volume.
+The application entry point is `server.pg.js`.
 
-## 3. Website on Netlify
-1. Edit `netlify.toml`: replace `YOUR-BACKEND.onrender.com` with your backend address.
-2. app.netlify.com -> Add new site -> Import from Git -> same repo. No build command; publish directory `public`.
-3. Because Netlify proxies /api, the front end needs no code changes and there are no CORS problems.
+## 1. GitHub
 
-## 4. Finish
-- Set `APP_URL` on the backend to your Netlify address so email links are right.
-- Log in as the admin and change nothing else: the demo accounts do not exist in production.
-- Back up the disk (database + uploads) regularly.
+Push the application source code to the configured GitHub repository.
 
-## Student list feature
-Admin -> **Student list** -> Upload spreadsheet (.xlsx or .csv). Supabase table: `student_roster`. Expected CSV columns: `StudentID, FullName, Email, College, Programme, YearOfStudy, Status`. The ID column should be a six-digit number and the primary key. Use active/inactive status values.
-- Student sign-up looks up the six-digit Student ID in the Supabase `student_roster` table. The official full name, college, programme, year and university email are applied by the backend; the browser receives only a masked email.
-  The server applies the official record itself, so a student cannot change those fields by editing the page. The service-role key must never be placed in frontend code.
-- Re-uploading updates existing students (blank cells never erase existing data).
-- `REQUIRE_ROSTER=true` -> only active IDs in the Supabase `student_roster` table can register. The Render blueprint enables this by default.
-- `AUTO_APPROVE_ROSTER=false` keeps new accounts pending administrator approval. Keep this setting false until you implement a secure email verification step; a Student ID alone is not proof of identity.
-- The sign-up lookup is public but rate-limited (30 per 10 min per IP) and returns no email, phone or marks.
+Do not commit:
+- `.env`
+- Database passwords or connection strings
+- JWT secrets
+- SMTP passwords
+- Supabase service-role keys
 
-## Files changed
-roster.js (new), db.js, server.js, public/js/{admin,auth,app}.js, package.json, netlify.toml, render.yaml, .env.example.
+## 2. Supabase Database
 
-## Demo data (for presentations)
-Set `DEMO_PASSWORD` on Render (or in `.env` locally). On a database that has **no students or lecturers yet**, the app loads sample faculties,
-departments, courses, students, lecturers, achievements, recommendations and approved results, plus one batch of marks waiting for Registrar approval.
-Every demo account uses `DEMO_PASSWORD` as its password (log in as `mdube@africau.edu`, `jncube@africau.edu` or `ian@student.africau.edu`).
-It never runs when real students or lecturers exist, and it never deletes anything. Remove `DEMO_PASSWORD` before real use.
+1. Open the Supabase project.
+2. Obtain the PostgreSQL connection string.
+3. Configure `DATABASE_URL` in Render.
+4. Keep the database connection string private.
 
-## Results, GPA and CGPA
-Lecturers enter coursework + exam marks per course and semester (e.g. `2026-S1`), save drafts, then submit. The Registrar (admin) approves or returns each batch
-under **Results & GPA**. GPA = sum(grade points x credit hours) / sum(credit hours). CGPA uses the latest attempt of every course. Only approved marks count.
-The grading scale is a SAMPLE: edit it under Results & GPA to match the official Africa University scale.
+StudentSphere uses the `studentsphere` PostgreSQL schema.
+
+Do not reset or delete production database records during deployment. Preserve the existing administrator account and academic data.
+
+## 3. Render Deployment
+
+The repository contains `studentsphere/render.yaml`.
+
+Create or update the Render Blueprint using the GitHub repository.
+
+The Blueprint configures:
+- Application root: `studentsphere`
+- Build command: `npm install`
+- Start command: `npm start`
+- Health check: `/api/health`
+- Persistent upload directory: `/var/data/uploads`
+
+Configure these environment variables in Render:
+
+| Variable | Value |
+|---|---|
+| NODE_ENV | production |
+| NODE_VERSION | 20 |
+| DATABASE_URL | Supabase PostgreSQL connection string |
+| JWT_SECRET | A long, randomly generated secret |
+| APP_URL | Public Render application URL |
+| UPLOAD_DIR | /var/data/uploads |
+| MAIL_MODE | smtp when SMTP is configured |
+| SMTP_HOST | Your email provider SMTP host |
+| SMTP_PORT | Your email provider SMTP port |
+| SMTP_SECURE | According to your SMTP provider |
+| SMTP_USER | Your SMTP username |
+| SMTP_PASS | Your SMTP password |
+| MAIL_FROM | Your verified sender address |
+
+Never put private credentials in frontend files or commit them to GitHub.
+
+If SMTP is not configured, use development email mode only for local testing.
+
+## 4. Verify Deployment
+
+After deployment, open:
+
+`https://studentsphere-au.onrender.com/api/health`
+
+The expected response is:
+
+`{"ok":true,"database":"connected"}`
+
+Then test:
+- Administrator login.
+- Student and lecturer registration pages.
+- Dashboard access and role permissions.
+- Password reset email workflow.
+- Student and lecturer management.
+- Results and GPA management.
+- Recommendation requests.
+- Achievement submission and verification.
+- Evidence uploads.
+
+## 5. Database and Account Safety
+
+- Preserve the existing administrator account.
+- Do not import the old 30 student records.
+- Do not create demonstration student or lecturer accounts.
+- Keep the existing student roster unchanged unless an authorised update is requested.
+- Back up the database and uploaded evidence regularly.
+
+## 6. Email Configuration
+
+Configure SMTP credentials as private Render environment variables.
+
+Set `APP_URL` to the public application address so password reset links point to the deployed application.
+
+Test password reset using an authorised account.
+
+## 7. Local Development
+
+From the `studentsphere` directory:
+
+Install dependencies:
+
+`npm install`
+
+Start the application:
+
+`npm start`
+
+The local application normally runs at:
+
+`http://localhost:3000`
+
+Use a private local `.env` file for development configuration.

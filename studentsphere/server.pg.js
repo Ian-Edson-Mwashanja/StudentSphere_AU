@@ -1,10 +1,9 @@
-﻿require("dotenv").config();
+require("dotenv").config();
 
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
-const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
@@ -24,7 +23,6 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const app = express();
 app.set("trust proxy", 1);
 
-app.use(cors());
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -1187,8 +1185,11 @@ app.post("/api/me/achievements", auth("student"), wrap(async (req, res) => {
     return bad(res, "Please select a valid achievement category");
   }
 
+  const parsedDate = new Date(`${dateObtained}T00:00:00.000Z`);
+
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateObtained) ||
-      Number.isNaN(Date.parse(dateObtained))) {
+      Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.toISOString().slice(0, 10) !== dateObtained) {
     return bad(res, "Please provide a valid achievement date");
   }
 
@@ -1213,29 +1214,143 @@ app.post("/api/me/achievements", auth("student"), wrap(async (req, res) => {
   try {
     await storeFiles(achievementId, files);
 
+    await db.query(
+      `INSERT INTO achievement_verifications
+        (achievement_id, lecturer_id, student_id, action, decision, comments)
+       VALUES ($1,$2,$3,'submitted','pending_verification',NULL)`,
+      [achievementId, lecturerId, req.user.id]
+    );
+  } catch (error) {
+    await removeFiles(achievementId).catch(() => {});
+
+    await db.query(
+      "DELETE FROM achievements WHERE id = $1 AND user_id = $2",
+      [achievementId, req.user.id]
+    ).catch(() => {});
+
+    throw error;
+  }
+
+  const achievement = {
+    id: achievementId,
+    title,
+    category
+  };
+
+  let lecturer = null;
+
+  try {
+    lecturer = await getUser(lecturerId);
+  } catch (error) {
+    console.error("Achievement lecturer lookup failed:", error.message);
+  }
+
+  if (lecturer) {
+    try {
+      await notify(
+        lecturer.id,
+        "Achievement verification required",
+        `${req.user.full_name} submitted "${title}" for verification.`,
+        `/lecturer/achievements/${achievementId}`,
+        "achievement"
+      );
+    } catch (error) {
+      console.error("Achievement notification failed:", error.message);
+    }
+
+    try {
+      await mailAchSubmitted(achievement, req.user, lecturer);
+    } catch (error) {
+      console.error("Achievement email failed:", error.message);
+    }
+  }
+
+  try {
+    await audit(req.user, "achievement.submitted", {
+      type: "achievement",
+      id: achievementId,
+      student: req.user.id,
+      decision: "pending_verification",
+      comments: title
+    });
+  } catch (error) {
+    console.error("Achievement audit logging failed:", error.message);
+  }
+
+  res.json({
+    ok: true,
+    id: achievementId,
+    message: "Your achievement has been submitted and is awaiting lecturer verification."
+  });
+}));
+
+app.put("/api/me/achievements/:id/evidence", auth("student"), wrap(async (req, res) => {
+  const result = await db.query(
+    "SELECT * FROM achievements WHERE id = $1 AND user_id = $2",
+    [req.params.id, req.user.id]
+  );
+
+  const achievement = result.rows[0];
+
+  if (!achievement) {
+    return bad(res, "Achievement not found", 404);
+  }
+
+  if (achievement.status !== "evidence_required") {
+    return bad(res, "No additional evidence has been requested for this achievement", 409);
+  }
+
+  const body = req.body || {};
+  const message = String(body.message || "").trim();
+
+  const files = prepareFiles(
+    (Array.isArray(body.files) ? body.files : [])
+      .map(file => ({ ...file, kind: "additional" }))
+  );
+
+  if (!message && !files.length) {
+    return bad(res, "Add a message or attach a file");
+  }
+
+  const previousResult = await db.query(
+    "SELECT id FROM achievement_files WHERE achievement_id = $1",
+    [achievement.id]
+  );
+
+  const previousIds = new Set(
+    previousResult.rows.map(file => String(file.id))
+  );
+
+  try {
+    await storeFiles(achievement.id, files);
+
     await db.transaction(async (client) => {
       await client.query(
         `UPDATE achievements
          SET status = 'pending_verification',
              student_response = $1
          WHERE id = $2 AND user_id = $3`,
-        [message || null, achievementId, req.user.id]
+        [message || null, achievement.id, req.user.id]
       );
 
       await client.query(
         `INSERT INTO achievement_verifications
           (achievement_id, lecturer_id, student_id, action, decision, comments)
          VALUES ($1,$2,$3,'evidence_added','pending_verification',$4)`,
-        [achievementId, achievement.lecturer_id, req.user.id, message || null]
+        [achievement.id, achievement.lecturer_id, req.user.id, message || null]
       );
     });
   } catch (error) {
-    const currentFiles = await filesOf(achievementId).catch(() => []);
+    const currentFiles = await db.query(
+      "SELECT id, stored_name FROM achievement_files WHERE achievement_id = $1",
+      [achievement.id]
+    ).catch(() => ({ rows: [] }));
 
-    for (const file of currentFiles) {
+    for (const file of currentFiles.rows) {
       if (!previousIds.has(String(file.id))) {
-        const filePath = path.join(UPLOAD_DIR, file.stored_name);
-        await fs.promises.unlink(filePath).catch(() => {});
+        await fs.promises.unlink(
+          path.join(UPLOAD_DIR, file.stored_name)
+        ).catch(() => {});
 
         await db.query(
           "DELETE FROM achievement_files WHERE id = $1",
@@ -1247,13 +1362,23 @@ app.post("/api/me/achievements", auth("student"), wrap(async (req, res) => {
     throw error;
   }
 
+  let lecturer = null;
+
+  if (achievement.lecturer_id) {
+    try {
+      lecturer = await getUser(achievement.lecturer_id);
+    } catch (error) {
+      console.error("Additional evidence lecturer lookup failed:", error.message);
+    }
+  }
+
   if (lecturer) {
     try {
       await notify(
         lecturer.id,
-        "Additional achievement evidence submitted",
-        `${req.user.full_name} added evidence for "${achievement.title}".`,
-        `/lecturer/achievements/${achievementId}`,
+        "Student added evidence",
+        `${req.user.full_name} responded about "${achievement.title}".`,
+        `/lecturer/achievements/${achievement.id}`,
         "achievement"
       );
     } catch (error) {
@@ -1270,7 +1395,9 @@ app.post("/api/me/achievements", auth("student"), wrap(async (req, res) => {
   try {
     await audit(req.user, "achievement.evidence_added", {
       type: "achievement",
-      id: achievementId
+      id: achievement.id,
+      student: req.user.id,
+      comments: message || null
     });
   } catch (error) {
     console.error("Additional evidence audit logging failed:", error.message);
@@ -1281,7 +1408,6 @@ app.post("/api/me/achievements", auth("student"), wrap(async (req, res) => {
     message: "Your additional evidence has been submitted for review."
   });
 }));
-
 app.delete("/api/me/achievements/:id", auth("student"), wrap(async (req, res) => {
   const achievementId = req.params.id;
 
@@ -1679,7 +1805,9 @@ app.put("/api/admin/users/:id", auth("admin"), wrap(async (req, res) => {
   if (!target) {
     return bad(res, "User not found", 404);
   }
-
+  if (Number(target.id) === 1) {
+    return bad(res, "The original system administrator account is protected", 403);
+  }
   if (String(target.id) === String(req.user.id)) {
     return bad(res, "You cannot change your own account");
   }
@@ -3121,9 +3249,10 @@ require("./academics.postgres")(app, {
 // =========================
 // HEALTH CHECK
 // =========================
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true });
-});
+app.get("/api/health", wrap(async (req, res) => {
+  await db.query("SELECT 1");
+  res.json({ ok: true, database: "connected" });
+}));
 
 // =========================
 // API NOT FOUND
