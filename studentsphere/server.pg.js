@@ -596,16 +596,41 @@ app.get("/api/me/profile", auth(), wrap(async (req, res) => {
     [req.user.id]
   );
 
+  const rawProfile = profileResult.rows[0] || {};
+
+  let skills = rawProfile.skills || [];
+
+  if (!Array.isArray(skills)) {
+    try {
+      const parsed = JSON.parse(skills || "[]");
+      skills = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      skills = [];
+    }
+  }
+
   const projectsResult = await db.query(
     "SELECT * FROM projects WHERE user_id = $1 ORDER BY id DESC",
     [req.user.id]
   );
 
+  const resultsResult = await db.query(
+    "SELECT * FROM results WHERE user_id = $1 ORDER BY id",
+    [req.user.id]
+  );
+
+  const achievements = await achievementsOf(req.user.id);
+
   return res.json({
     ok: true,
     user: pub(req.user),
-    profile: profileResult.rows[0] || {},
+    profile: {
+      ...rawProfile,
+      skills
+    },
     projects: projectsResult.rows,
+    achievements,
+    results: resultsResult.rows,
     cgpa: await cgpaOf(req.user.id)
   });
 }));
